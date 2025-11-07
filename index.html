@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Todo + MongoDB (Demo)</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+    h1 { margin-bottom: 8px; }
+    form { display: flex; gap: 8px; margin: 16px 0; }
+    input[type="text"] { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; }
+    button { padding: 10px 14px; border: 0; border-radius: 8px; cursor: pointer; }
+    button.primary { background: #2563eb; color: white; }
+    ul { list-style: none; padding: 0; }
+    li { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid #eee; border-radius: 10px; margin-bottom: 8px; }
+    .text.done { text-decoration: line-through; color: #6b7280; }
+    .meta { margin-left: auto; display: flex; gap: 8px; }
+    .danger { background: #ef4444; color: white; }
+  </style>
+</head>
+<body>
+  <h1>Todo Demo</h1>
+  <small>MongoDB + Express + Vanilla JS</small>
+
+  <form id="todo-form">
+    <input id="todo-input" type="text" placeholder="Nhập việc cần làm..." required />
+    <button class="primary" type="submit">Thêm</button>
+  </form>
+
+  <ul id="todo-list"></ul>
+
+  <template id="todo-item">
+    <li>
+      <input type="checkbox" class="toggle" />
+      <span class="text"></span>
+      <div class="meta">
+        <button class="danger delete">Xoá</button>
+      </div>
+    </li>
+  </template>
+
+  <script>
+    const listEl = document.getElementById('todo-list');
+    const formEl = document.getElementById('todo-form');
+    const inputEl = document.getElementById('todo-input');
+    const tpl = document.getElementById('todo-item');
+
+    async function api(path, opts = {}) {
+      const res = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    }
+
+    async function loadTodos() {
+      const data = await api('/api/todos');
+      listEl.innerHTML = '';
+      data.forEach(renderTodo);
+    }
+
+    function renderTodo(todo) {
+      const node = tpl.content.firstElementChild.cloneNode(true);
+      const checkbox = node.querySelector('.toggle');
+      const text = node.querySelector('.text');
+      const del = node.querySelector('.delete');
+
+      checkbox.checked = !!todo.done;
+      text.textContent = todo.text;
+      text.classList.toggle('done', todo.done);
+
+      checkbox.addEventListener('change', async () => {
+        try {
+          const updated = await api(`/api/todos/${todo._id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ done: checkbox.checked })
+          });
+          text.classList.toggle('done', updated.done);
+        } catch (e) {
+          alert('Lỗi cập nhật: ' + e.message);
+          checkbox.checked = !checkbox.checked; // rollback UI
+        }
+      });
+
+      del.addEventListener('click', async () => {
+        if (!confirm('Xoá việc này?')) return;
+        try {
+          await api(`/api/todos/${todo._id}`, { method: 'DELETE' });
+          node.remove();
+        } catch (e) {
+          alert('Lỗi xoá: ' + e.message);
+        }
+      });
+
+      listEl.appendChild(node);
+    }
+
+    formEl.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const value = inputEl.value.trim();
+      if (!value) return;
+      try {
+        const created = await api('/api/todos', {
+          method: 'POST',
+          body: JSON.stringify({ text: value })
+        });
+        renderTodo(created);
+        inputEl.value = '';
+        inputEl.focus();
+      } catch (e) {
+        alert('Lỗi tạo: ' + e.message);
+      }
+    });
+
+    loadTodos().catch(err => alert('Không tải được danh sách: ' + err.message));
+  </script>
+</body>
+</html>
