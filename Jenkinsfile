@@ -1,14 +1,22 @@
 pipeline {
-
-    agent any 
+    agent any
 
     stages {
 
-        stage("build") {
+        stage("build BE") {
 
             steps {
-                echo 'Building the project...'
-                sh 'npm install'
+                echo 'Building the backend project...'
+                NodeJS('NodeJS-22.14') {
+                    sh 'npm install'
+                }
+            }
+        }
+
+        stage('build FE') {
+            steps {
+                echo 'FE is static'
+                archiveArtifacts artifacts: 'index.html, app.js', fingerprint: true
             }
         }
 
