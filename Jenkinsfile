@@ -3,6 +3,13 @@ pipeline {
 
     stages {
 
+        stage('webhooks') {
+            steps {
+                echo 'Testing Webhooks...'
+            }
+        }
+
+
         stage("build BE") {
 
             steps {
