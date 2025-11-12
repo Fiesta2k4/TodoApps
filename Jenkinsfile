@@ -1,6 +1,12 @@
 pipeline {
     agent { dockerfile true }
     stages {
+        stage('Check Docker') {
+            steps {
+                sh 'docker version'
+            }
+        }
+
         stage('Test') {
             steps {
                 sh 'node --version'
