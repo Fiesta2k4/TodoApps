@@ -44,5 +44,11 @@ pipeline {
         }
       }
     }
+
+    stage('Time') {
+      steps {
+        echo 'Bay gio la 4h57 phut chieu'
+      }
+    }
   }
 }
