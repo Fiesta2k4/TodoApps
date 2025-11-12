@@ -6,6 +6,7 @@ pipeline {
         stage('webhooks') {
             steps {
                 echo 'Testing Webhooks...'
+                echo 'Webhooks configured successfully.'
             }
         }
 
