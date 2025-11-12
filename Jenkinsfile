@@ -24,7 +24,7 @@ pipeline {
         stage('build FE') {
             steps {
                 echo 'FE is static'
-                archiveArtifacts artifacts: 'index.html, app.js', 'theme.css', fingerprint: true
+                archiveArtifacts artifacts: 'index.html, app.js', fingerprint: true
             }
         }
 
