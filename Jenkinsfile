@@ -13,5 +13,11 @@ pipeline {
                 sh 'npm --version'
             }
         }
+
+        stage('Build image') { 
+            steps { 
+                sh 'docker build -t myimg:${BRANCH_NAME}-${BUILD_NUMBER} -f Dockerfile .' 
+            }
+        }
     }
 }
