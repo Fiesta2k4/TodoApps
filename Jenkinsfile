@@ -7,6 +7,7 @@ pipeline {
             steps {
                 echo 'Testing Webhooks...'
                 echo 'Webhooks configured successfully.'
+                echo 'Bay gio la 4h47 phut'
             }
         }
 
