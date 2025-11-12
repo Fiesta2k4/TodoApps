@@ -7,7 +7,7 @@ pipeline {
 
             steps {
                 echo 'Building the backend project...'
-                NodeJS('NodeJS-22.14') {
+                nodejs('NodeJS-22.14') {
                     sh 'npm install'
                 }
             }
