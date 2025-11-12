@@ -8,6 +8,7 @@ pipeline {
 
             steps {
                 echo 'Building the project...'
+                sh 'npm install'
             }
         }
 
