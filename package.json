@@ -11,6 +11,7 @@
   "description": "",
   "dependencies": {
     "express": "^5.1.0",
-    "mongoose": "^8.19.3"
+    "mongoose": "^8.19.3",
+    "prom-client": "^15.1.3"
   }
 }

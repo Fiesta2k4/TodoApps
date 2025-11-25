@@ -1,14 +1,33 @@
 // app.js
 // Backend tối giản: Node.js + Express + Mongoose (MongoDB)
 const express = require('express');
+const client = require('prom-client');
 const mongoose = require('mongoose');
 const path = require('path');
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 const MONGODB_URI = process.env.MONGODB_URI ||  'mongodb://root:example@mongodb/todos?authSource=admin';
 
 const app = express();
 app.use(express.json());
+
+const register = new client.Registry();
+client.collectDefaultMetrics({ register });
+
+const httpRequests = new client.Counter({
+  name: 'http_requests_total',
+  help: 'Total number of HTTP requests',
+  labelNames: ['method', 'path', 'status']
+});
+register.registerMetric(httpRequests);
+
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    httpRequests.labels(req.method, req.path, res.statusCode).inc();
+  });
+  next();
+});
+
 
 // Phục vụ file tĩnh (index.html trong cùng thư mục)
 app.use(express.static(path.join(__dirname)));
@@ -86,6 +105,11 @@ app.delete('/api/todos/:id', async (req, res) => {
     console.error(e);
     res.status(400).json({ error: 'Invalid id' });
   }
+});
+
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
 });
 
 (async () => {
