@@ -72,9 +72,144 @@ jobs:
 
   docker-build:
     runs-on: ubuntu-latest
+    env:
+      IMAGE_TAG: todoapps:${{ github.sha }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Build Docker image
-        run: docker build -t todoapps:ci .
+        run: docker build -t "$IMAGE_TAG" .
+
+      - name: Scan built image with Trivy
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE_TAG }}
+          format: json
+          output: trivy-report.json
+          vuln-type: os,library
+          severity: CRITICAL,HIGH,MEDIUM
+          ignore-unfixed: true
+          exit-code: 0
+
+      - name: Upload Trivy report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report-${{ github.run_id }}
+          path: trivy-report.json
+          retention-days: 14
+
+      - name: Sync Trivy findings to DATN (optional)
+        if: ${{ secrets.DATN_API_URL != '' }}
+        env:
+          DATN_API_URL: ${{ secrets.DATN_API_URL }}
+          DATN_API_TOKEN: ${{ secrets.DATN_API_TOKEN }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          python - <<'PY'
+          import datetime
+          import hashlib
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          api_url = os.getenv("DATN_API_URL", "").rstrip("/")
+          if not api_url:
+              print("DATN_API_URL is empty, skip sync")
+              raise SystemExit(0)
+
+          token = os.getenv("DATN_API_TOKEN", "").strip()
+          commit_sha = os.getenv("GITHUB_SHA", "")
+          image_tag = os.getenv("IMAGE_TAG", "")
+          run_id = os.getenv("GITHUB_RUN_ID", "")
+          run_attempt = os.getenv("GITHUB_RUN_ATTEMPT", "1")
+          now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+          sbom_id = f"trivy-{run_id}-{run_attempt}"
+
+          with open("trivy-report.json", "r", encoding="utf-8") as f:
+              report = json.load(f)
+
+          headers = {"Content-Type": "application/json"}
+          if token:
+              headers["Authorization"] = f"Bearer {token}"
+
+          def post_json(path: str, payload: dict) -> tuple[int, str]:
+              req = urllib.request.Request(
+                  f"{api_url}{path}",
+                  data=json.dumps(payload).encode("utf-8"),
+                  headers=headers,
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      return resp.status, resp.read().decode("utf-8", errors="replace")
+              except urllib.error.HTTPError as exc:
+                  body = exc.read().decode("utf-8", errors="replace")
+                  return exc.code, body
+
+          sbom_payload = {
+              "sbom_id": sbom_id,
+              "build_id": int(run_id) if run_id.isdigit() else None,
+              "commit_sha": commit_sha,
+              "image_tag": image_tag,
+              "format": "trivy-json",
+              "created_at": now,
+              "data": {
+                  "run_id": run_id,
+                  "run_attempt": run_attempt,
+                  "workflow": os.getenv("GITHUB_WORKFLOW", ""),
+                  "repository": os.getenv("GITHUB_REPOSITORY", ""),
+              },
+          }
+
+          status, body = post_json("/security/sboms", sbom_payload)
+          print(f"SBOM sync status={status}")
+          if status not in (200, 201, 409):
+              print(body)
+              raise SystemExit(1)
+
+          severities = {"CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"}
+          findings_sent = 0
+          for result in report.get("Results", []):
+              target = result.get("Target")
+              for vuln in result.get("Vulnerabilities") or []:
+                  vuln_id = vuln.get("VulnerabilityID") or "UNKNOWN"
+                  pkg = vuln.get("PkgName") or "unknown"
+                  installed = vuln.get("InstalledVersion") or ""
+                  severity = (vuln.get("Severity") or "UNKNOWN").upper()
+                  if severity not in severities:
+                      severity = "UNKNOWN"
+                  title = vuln.get("Title") or vuln.get("PrimaryURL") or vuln_id
+                  finding_key = f"{sbom_id}:{target}:{pkg}:{vuln_id}:{installed}"
+                  finding_id = hashlib.sha1(finding_key.encode("utf-8")).hexdigest()
+
+                  finding_payload = {
+                      "finding_id": finding_id,
+                      "sbom_id": sbom_id,
+                      "build_id": int(run_id) if run_id.isdigit() else None,
+                      "commit_sha": commit_sha,
+                      "image_tag": image_tag,
+                      "severity": severity,
+                      "title": title,
+                      "package": pkg,
+                      "cve": vuln_id,
+                      "status": "open",
+                      "first_seen": now,
+                      "last_seen": now,
+                      "data": {
+                          "target": target,
+                          "installed_version": installed,
+                          "fixed_version": vuln.get("FixedVersion"),
+                          "primary_url": vuln.get("PrimaryURL"),
+                      },
+                  }
+                  status, body = post_json("/security/findings", finding_payload)
+                  if status not in (200, 201, 409):
+                      print(f"Finding sync failed status={status}")
+                      print(body)
+                      raise SystemExit(1)
+                  findings_sent += 1
+
+          print(f"Synced findings: {findings_sent}")
+          PY
